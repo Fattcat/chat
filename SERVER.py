@@ -1,46 +1,61 @@
 import socket
 import threading
 
-# Slovník pre uchovanie pripojených používateľov a ich mena
-connected_clients = {}
+# Connection Data
+host = '192.168.0.130'
+port = 55555
 
-def handle_client(client_socket):
-    # Pripojenie používateľa
-    client_name = client_socket.recv(1024).decode()
-    connected_clients[client_name] = client_socket
+# Starting Server
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind((host, port))
+server.listen()
 
-    # Informovanie o pripojení používateľa
-    print(f"{client_name} sa pripojil")
+# Lists For Clients and Their Nicknames
+clients = []
+nicknames = []
 
-    # Zobraziť online používateľov
-    display_online_users()
+# Sending Messages To All Connected Clients
+def broadcast(message):
+    for client in clients:
+        client.send(message)
 
+# Handling Messages From Clients
+def handle(client):
     while True:
-        recipient_name = client_socket.recv(1024).decode()
-        message = client_socket.recv(1024).decode()
+        try:
+            # Broadcasting Messages
+            message = client.recv(1024)
+            broadcast(message)
+        except:
+            # Removing And Closing Clients
+            index = clients.index(client)
+            clients.remove(client)
+            client.close()
+            nickname = nicknames[index]
+            broadcast('{} left!'.format(nickname).encode('ascii'))
+            nicknames.remove(nickname)
+            break
 
-        if recipient_name in connected_clients:
-            recipient_socket = connected_clients[recipient_name]
-            recipient_socket.send(f"{client_name}: {message}".encode())
-        else:
-            print(f"Odosielateľ {client_name} nenašiel príjemcu {recipient_name}")
-
-def display_online_users():
-    online_users = ", ".join(connected_clients.keys())
-    print(f"ONLINE používatelia: {online_users}")
-
-def main():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('0.0.0.0', 12345)
-    server_socket.bind(server_address)
-    server_socket.listen(5)
-
-    print("Server čaká na pripojenie klientov...")
-
+# Receiving / Listening Function
+def receive():
     while True:
-        client_socket, client_address = server_socket.accept()
-        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-        client_handler.start()
+        # Accept Connection
+        client, address = server.accept()
+        print("Connected with {}".format(str(address)))
 
-if __name__ == "__main__":
-    main()
+        # Request And Store Nickname
+        client.send('NICK'.encode('ascii'))
+        nickname = client.recv(1024).decode('ascii')
+        nicknames.append(nickname)
+        clients.append(client)
+
+        # Print And Broadcast Nickname
+        print("Nickname is {}".format(nickname))
+        broadcast("{} joined!".format(nickname).encode('ascii'))
+        client.send('Connected to server!'.encode('ascii'))
+
+        # Start Handling Thread For Client
+        thread = threading.Thread(target=handle, args=(client,))
+        thread.start()
+
+receive()
